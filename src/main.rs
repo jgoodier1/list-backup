@@ -1,4 +1,3 @@
-use std::env;
 use std::fs;
 use std::io::prelude::*;
 use std::io::ErrorKind;
@@ -42,12 +41,16 @@ async fn main() {
     dotenv().unwrap();
 
     // need to first read the config file
-    let home_dir = home::home_dir().unwrap();
-    env::set_current_dir(home_dir).unwrap();
+    let mut file_path = home::home_dir().unwrap();
+    file_path.push(".config");
+    file_path.push("list-backup");
+    file_path.push("config");
+    file_path.set_extension("toml");
+
     let file = fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(".config/list-backup/config.toml");
+        .open(file_path);
     match file {
         Err(error) => {
             match error.kind() {
@@ -69,7 +72,8 @@ async fn main() {
             file.read_to_string(&mut file_string).unwrap();
             let config: TomlConfig = toml::from_str(&file_string).unwrap();
             if let Some(anilist) = config.anilist {
-                queries::get_list(&anilist).await
+                let list = queries::get_list(&anilist).await;
+                queries::write_list_to_file(&list, (anilist.user_id, &anilist.user_name));
             }
         }
     }

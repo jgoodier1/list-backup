@@ -22,6 +22,7 @@ pub struct Config {
     pub refresh_token: String,
     pub code: String,
     pub user_id: u32,
+    pub user_name: String
 }
 
 #[derive(Deserialize, Debug)]
@@ -132,14 +133,15 @@ pub async fn get_token(code: &str) {
 
     if let Ok(res) = res {
         let response: Response = serde_json::from_str(&res).unwrap();
-        let user_id = queries::get_user_id(response.access_token.clone()).await;
+        let user_data = queries::get_user_id(response.access_token.clone()).await;
         let config = Config {
             token_type: response.token_type,
             expires_in: response.expires_in,
             access_token: response.access_token,
             refresh_token: response.refresh_token,
             code: code.to_string(),
-            user_id,
+            user_id: user_data.id,
+            user_name: user_data.name,
         };
         get_config_dir(config);
     }
