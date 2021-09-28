@@ -42,7 +42,7 @@ pub struct Entries {
     pub entries: Vec<Entry>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Entry {
     pub status: MediaListStatus,
     pub score: f32,
@@ -50,7 +50,7 @@ pub struct Entry {
     pub media: Media,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Copy, Clone)]
 #[serde(rename_all(deserialize = "SCREAMING_SNAKE_CASE", serialize = "PascalCase"))]
 pub enum MediaListStatus {
     Completed,
@@ -61,27 +61,27 @@ pub enum MediaListStatus {
     Repeating,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "snake_case"))]
 pub struct Media {
     pub id: u32,
-    pub id_mal: u32,
+    pub id_mal: Option<u32>,
     pub title: Title,
     pub format: MediaFormat,
-    pub episodes: u32,
+    pub episodes: Option<u32>,
+    pub chapters: Option<u32>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "snake_case"))]
 pub struct Title {
     pub user_preferred: String,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-#[serde(rename_all(deserialize = "SCREAMING_SNAKE_CASE", serialize = "PascalCase"))]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq)]
 pub enum MediaType {
-    Anime,
-    Manga,
+    ANIME,
+    MANGA,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy)]
@@ -133,8 +133,8 @@ pub async fn get_user_id(access_token: String) -> UserData {
 }
 
 const GET_LIST: &str = "
-query ($id: Int) {
-	MediaListCollection(userId: $id, type: ANIME) {
+query ($id: Int, $list_type: MediaType) {
+	MediaListCollection(userId: $id, type: $list_type) {
     lists {
       entries {
         status
@@ -148,6 +148,7 @@ query ($id: Int) {
           }
           format
           episodes
+          chapters
         }
       }
     }
@@ -155,10 +156,13 @@ query ($id: Int) {
 }
 ";
 
-pub async fn get_list(config: &Config) -> Lists {
+pub async fn get_list(config: &Config, list_type: MediaType) -> Lists {
     let auth_header = format!("Bearer {}", config.access_token);
 
-    let json = serde_json::json!({"query": GET_LIST, "variables" : {"id": config.user_id}});
+    let json = serde_json::json!({
+        "query": GET_LIST,
+        "variables" : {"id": config.user_id, "list_type": list_type}
+    });
 
     let client = reqwest::Client::new();
     let res = client

@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::prelude::*;
 
+use home;
 use serde::{Deserialize, Serialize};
 
 use super::queries::{Entry, Lists, MediaFormat, MediaListStatus, MediaType, UserData};
@@ -20,7 +21,7 @@ struct UserSection {
 }
 
 impl UserSection {
-    fn new(lists: &Lists, user: UserData) -> UserSection {
+    fn new(lists: &Lists, user: UserData, list_type: MediaType) -> UserSection {
         let watching_position = lists
             .lists
             .iter()
@@ -81,7 +82,7 @@ impl UserSection {
         UserSection {
             user_id: user.id,
             username: user.name,
-            list_type: MediaType::Anime,
+            list_type,
             total_anime: total,
             watching: watching_len,
             completed: completed_len,
@@ -97,8 +98,9 @@ impl UserSection {
 struct EntrySection {
     title: String,
     id: u32,
-    id_mal: u32,
-    episodes: u32,
+    id_mal: Option<u32>,
+    episodes: Option<u32>,
+    chapters: Option<u32>,
     format: MediaFormat,
     status: MediaListStatus,
     score: f32,
@@ -112,8 +114,9 @@ impl EntrySection {
             id: entry.media.id,
             id_mal: entry.media.id_mal,
             episodes: entry.media.episodes,
-            format: entry.media.format.clone(),
-            status: entry.status.clone(),
+            chapters: entry.media.chapters,
+            format: entry.media.format,
+            status: entry.status,
             score: entry.score,
             progress: entry.progress,
         }
@@ -149,20 +152,31 @@ struct BackupToml {
     planning: Planning,
 }
 
-pub fn write_list_to_file(list: &Lists, user: (u32, &str)) {
+pub fn write_list_to_file(list: &Lists, user: (u32, &str), list_type: MediaType) {
     let user = UserData {
         id: user.0,
         name: user.1.to_string(),
     };
+
+    let mut file_path = home::home_dir().unwrap();
+    file_path.push("Documents");
+    if list_type == MediaType::ANIME {
+        file_path.push("anime-backup");
+    } else {
+        file_path.push("manga-backup");
+    }
+    file_path.set_extension("toml");
+
     // create the file
     let file = fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .open("anilist-backup.toml")
+        .truncate(true)
+        .open(file_path)
         .unwrap();
 
-    let user_section = UserSection::new(list, user);
+    let user_section = UserSection::new(list, user, list_type);
 
     let current_list = Current(create_entry_section_vec(&list, MediaListStatus::Current));
     let completed_list = Completed(create_entry_section_vec(&list, MediaListStatus::Completed));
