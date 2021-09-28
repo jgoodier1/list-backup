@@ -22,7 +22,7 @@ pub struct Config {
     pub refresh_token: String,
     pub code: String,
     pub user_id: u32,
-    pub user_name: String
+    pub user_name: String,
 }
 
 #[derive(Deserialize, Debug)]

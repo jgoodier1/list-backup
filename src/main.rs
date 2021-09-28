@@ -2,13 +2,14 @@ use std::fs;
 use std::io::prelude::*;
 use std::io::ErrorKind;
 
+use dotenv::dotenv;
+use home;
 use rocket::Config as RocketConfig;
 use rocket::Shutdown;
-use home;
-use dotenv::dotenv;
 
 mod config;
 mod queries;
+mod save_to_file;
 use config::TomlConfig;
 
 #[rocket::get("/anilist?<code>")]
@@ -73,7 +74,7 @@ async fn main() {
             let config: TomlConfig = toml::from_str(&file_string).unwrap();
             if let Some(anilist) = config.anilist {
                 let list = queries::get_list(&anilist).await;
-                queries::write_list_to_file(&list, (anilist.user_id, &anilist.user_name));
+                save_to_file::write_list_to_file(&list, (anilist.user_id, &anilist.user_name));
             }
         }
     }
