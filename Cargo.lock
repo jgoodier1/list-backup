@@ -585,6 +585,7 @@ dependencies = [
  "clap",
  "dotenv",
  "home",
+ "rand",
  "reqwest",
  "rocket",
  "serde",

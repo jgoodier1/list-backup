@@ -2,7 +2,7 @@ use std::cmp::PartialEq;
 
 use serde::{Deserialize, Serialize};
 
-use super::config::Config;
+use super::config::AnilistConfig;
 
 #[derive(Deserialize, Debug)]
 struct UserIdResp {
@@ -156,7 +156,7 @@ query ($id: Int, $list_type: MediaType) {
 }
 ";
 
-pub async fn get_list(config: &Config, list_type: MediaType) -> Lists {
+pub async fn get_list(config: &AnilistConfig, list_type: MediaType) -> Lists {
     let auth_header = format!("Bearer {}", config.access_token);
 
     let json = serde_json::json!({

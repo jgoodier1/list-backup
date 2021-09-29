@@ -4,7 +4,7 @@ use std::io::prelude::*;
 use home;
 use serde::{Deserialize, Serialize};
 
-use super::queries::{Entry, Lists, MediaFormat, MediaListStatus, MediaType, UserData};
+use super::anilist_queries::{Entry, Lists, MediaFormat, MediaListStatus, MediaType, UserData};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct UserSection {
