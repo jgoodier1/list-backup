@@ -1,7 +1,7 @@
 use std::env;
 use std::fs;
 use std::io::prelude::*;
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 
 use clap::{App, Arg, SubCommand};
 use dotenv::dotenv;
@@ -14,8 +14,8 @@ mod config;
 use config::TomlConfig;
 mod anilist_queries;
 use anilist_queries::MediaType;
-mod save_to_file;
 mod mal_queries;
+mod save_to_file;
 
 pub struct PKCE {
     code_challenge: String,
@@ -90,7 +90,9 @@ async fn main() {
                         .required(true),
                 ),
         )
-        .subcommand(SubCommand::with_name("update").about("Updates MAL with your list from Anilist"))
+        .subcommand(
+            SubCommand::with_name("update").about("Updates MAL with your list from Anilist"),
+        )
         .get_matches();
 
     let pkce = PKCE {
@@ -122,20 +124,18 @@ async fn main() {
                     .write(true)
                     .open(file_path);
                 match file {
-                    Err(error) => {
-                        match error.kind() {
-                            ErrorKind::NotFound => {
-                                println!("Go here to authenticate: https://anilist.co/api/v2/oauth/authorize?client_id=6593&redirect_uri=http://localhost:5000/anilist&response_type=code");
-                                start_rocket(pkce).await;
-                            }
-                            ErrorKind::PermissionDenied => {
-                                panic!("You don't have permission to open the config file")
-                            }
-                            other_error => {
-                                panic!("Unhandled error: {:?}", other_error);
-                            }
+                    Err(error) => match error.kind() {
+                        ErrorKind::NotFound => {
+                            println!("Go here to authenticate: https://anilist.co/api/v2/oauth/authorize?client_id=6593&redirect_uri=http://localhost:5000/anilist&response_type=code");
+                            start_rocket(pkce).await;
                         }
-                    }
+                        ErrorKind::PermissionDenied => {
+                            panic!("You don't have permission to open the config file")
+                        }
+                        other_error => {
+                            panic!("Unhandled error: {:?}", other_error);
+                        }
+                    },
                     Ok(mut file) => {
                         let mut file_string = String::new();
                         file.read_to_string(&mut file_string).unwrap();
@@ -157,14 +157,39 @@ async fn main() {
         }
         ("update", Some(_)) => {
             let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(file_path);
+                .read(true)
+                .write(true)
+                .open(file_path);
 
             match file {
-                Err(error) => {
-                    match error.kind() {
-                        ErrorKind::NotFound => {
+                Err(error) => match error.kind() {
+                    ErrorKind::NotFound => {
+                        let mut auth_link = String::new();
+                        auth_link.push_str(
+                                "https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=",
+                            );
+                        auth_link.push_str(&env::var("MAL_CLIENT_ID").unwrap());
+                        auth_link.push_str("&code_challenge=");
+                        auth_link.push_str(&pkce.code_challenge);
+                        println!("Go here to authenticate: {}", auth_link);
+
+                        start_rocket(pkce).await;
+                    }
+                    ErrorKind::PermissionDenied => {
+                        panic!("You don't have permission to open the config file")
+                    }
+                    other_error => {
+                        panic!("Unhandled error: {:?}", other_error);
+                    }
+                },
+                Ok(mut file) => {
+                    let mut file_string = String::new();
+                    file.read_to_string(&mut file_string).unwrap();
+                    let config: TomlConfig = toml::from_str(&file_string).unwrap();
+                    // just going to get the current list from mal before trying to update anything
+                    let mal_list = match &config.myanimelist {
+                        Some(mal) => mal_queries::get_list(&mal).await,
+                        None => {
                             let mut auth_link = String::new();
                             auth_link.push_str(
                                 "https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=",
@@ -175,41 +200,93 @@ async fn main() {
                             println!("Go here to authenticate: {}", auth_link);
 
                             start_rocket(pkce).await;
-
+                            return;
                         }
-                        ErrorKind::PermissionDenied => {
-                            panic!("You don't have permission to open the config file")
+                    };
+                    let anilist_list = match config.anilist {
+                        Some(anilist) => {
+                            anilist_queries::get_list(&anilist, MediaType::ANIME).await
                         }
-                        other_error => {
-                            panic!("Unhandled error: {:?}", other_error);
+                        None => {
+                            println!("Go here to authenticate: https://anilist.co/api/v2/oauth/authorize?client_id=6593&redirect_uri=http://localhost:5000/anilist&response_type=code");
+                            start_rocket(pkce).await;
+                            return;
                         }
-                    }
-                }
-                Ok(mut file) => {
-                    let mut file_string = String::new();
-                    file.read_to_string(&mut file_string).unwrap();
-                    let config: TomlConfig = toml::from_str(&file_string).unwrap();
-                    // just going to get the current list from mal before trying to update anything
-                    if let Some(mal) = config.myanimelist {
-                        mal_queries::get_list(&mal).await;
-                    } else {
-                        let mut auth_link = String::new();
-                        auth_link.push_str(
-                            "https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=",
-                        );
-                        auth_link.push_str(&env::var("MAL_CLIENT_ID").unwrap());
-                        auth_link.push_str("&code_challenge=");
-                        auth_link.push_str(&pkce.code_challenge);
-                        println!("Go here to authenticate: {}", auth_link);
-
-                        start_rocket(pkce).await;
-                    }
+                    };
+                    // compare them both and update the one that's behind
+                    let mal_config = config.myanimelist.unwrap();
+                    do_update(mal_config, mal_list, anilist_list).await;
                 }
             }
-
         }
         _ => {
             panic!("No matches");
         }
+    }
+}
+
+async fn do_update(
+    mal_config: config::MALConfig,
+    mal_list: mal_queries::List,
+    anilist_list: anilist_queries::Lists,
+) {
+    for list in anilist_list.lists {
+        for anilist_entry in list.entries {
+            // iterate through mal list and compare their id with anilist_entry.media.id_mal
+            // only if anilist_entry.media.id_mal exists
+            match anilist_entry.media.id_mal {
+                Some(id_mal) => {
+                    for mal_entry in &mal_list.data {
+                        if mal_entry.node.id == id_mal
+                            && mal_entry.list_status.num_episodes_watched != anilist_entry.progress
+                        {
+                            println!("Title: {}", anilist_entry.media.title.user_preferred);
+                            println!("Anilist Progress: {}", anilist_entry.progress);
+                            println!(
+                                "Myanimelist progress: {}",
+                                mal_entry.list_status.num_episodes_watched
+                            );
+                            println!("Update MAL? [y/n]");
+                            let mut buffer = String::new();
+                            io::stdin().read_line(&mut buffer).unwrap();
+                            // verify input
+                            let buffer = buffer.trim();
+                            if buffer == "n" {
+                                continue;
+                            } else if buffer == "y" {
+                                // update
+                                // might have to convert score here
+                                let updated_status = get_updated_status(anilist_entry.status);
+                                let updated_score = anilist_entry.score.floor() as u8;
+                                mal_queries::update_entry(
+                                    &mal_config,
+                                    mal_entry.node.id,
+                                    updated_status,
+                                    anilist_entry.progress,
+                                    updated_score,
+                                )
+                                .await;
+                            } else {
+                                // treat as no for now because it doesn't matter right now
+                                continue;
+                            }
+                        }
+                        // also need to impl case if entry only exists on one site
+                    }
+                }
+                None => continue,
+            }
+        }
+    }
+}
+
+fn get_updated_status(anilist_status: anilist_queries::MediaListStatus ) -> mal_queries::Status {
+    match anilist_status {
+        anilist_queries::MediaListStatus::Completed => mal_queries::Status::completed,
+        anilist_queries::MediaListStatus::Dropped => mal_queries::Status::dropped,
+        anilist_queries::MediaListStatus::Paused => mal_queries::Status::on_hold,
+        anilist_queries::MediaListStatus::Planning => mal_queries::Status::plan_to_watch,
+        anilist_queries::MediaListStatus::Current => mal_queries::Status::watching,
+        anilist_queries::MediaListStatus::Repeating => mal_queries::Status::completed
     }
 }
