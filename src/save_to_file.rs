@@ -124,22 +124,22 @@ impl EntrySection {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-struct Current(Vec<EntrySection>);
+struct Current(Option<Vec<EntrySection>>);
 
 #[derive(Deserialize, Serialize, Debug)]
-struct Completed(Vec<EntrySection>);
+struct Completed(Option<Vec<EntrySection>>);
 
 #[derive(Deserialize, Serialize, Debug)]
-struct Planning(Vec<EntrySection>);
+struct Planning(Option<Vec<EntrySection>>);
 
 #[derive(Deserialize, Serialize, Debug)]
-struct Dropped(Vec<EntrySection>);
+struct Dropped(Option<Vec<EntrySection>>);
 
 #[derive(Deserialize, Serialize, Debug)]
-struct Paused(Vec<EntrySection>);
+struct Paused(Option<Vec<EntrySection>>);
 
 #[derive(Deserialize, Serialize, Debug)]
-struct Repeating(Vec<EntrySection>);
+struct Repeating(Option<Vec<EntrySection>>);
 
 #[derive(Deserialize, Serialize, Debug)]
 struct BackupToml {
@@ -197,18 +197,24 @@ pub fn write_list_to_file(list: &Lists, user: (u32, &str), list_type: MediaType)
     writeln!(&file, "{}", backup_toml).unwrap();
 }
 
-fn create_entry_section_vec(list: &Lists, status: MediaListStatus) -> Vec<EntrySection> {
+fn create_entry_section_vec(list: &Lists, status: MediaListStatus) -> Option<Vec<EntrySection>> {
     let list_pos = list
         .lists
         .iter()
         .position(|x| x.entries[0].status == status)
-        .unwrap();
-    let list = &list.lists[list_pos].entries;
+        .unwrap_or_else(|| 999);
 
     let mut vec = Vec::new();
-    for entry in list.iter() {
-        let entry_section = EntrySection::new(&entry);
-        vec.push(entry_section);
+
+    if list_pos <= list.lists.len() {
+        let list = &list.lists[list_pos].entries;
+
+        for entry in list.iter() {
+            let entry_section = EntrySection::new(&entry);
+            vec.push(entry_section);
+        }
+        Some(vec)
+    } else {
+        None
     }
-    vec
 }
